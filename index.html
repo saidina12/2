@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>EasyPlan - Planificateur d'Événements</title>
+  <style>
+    :root {
+      --primary: #4e73df;
+      --secondary: #f8f9fc;
+      --danger: #e74a3b;
+      --success: #1cc88a;
+      --warning: #f6c23e;
+      --light: #ffffff;
+      --gray: #858796;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #dbeafe, #eef2ff);
+      margin: 0;
+      padding: 0;
+    }
+
+    h1 {
+      text-align: center;
+      padding: 30px;
+      margin: 0;
+      color: var(--primary);
+      text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.1);
+      animation: fadeInDown 0.8s ease;
+    }
+
+    form, .search, table {
+      background: var(--light);
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      margin: 20px auto;
+      padding: 20px;
+      width: 90%;
+      max-width: 800px;
+      animation: fadeInUp 1s ease;
+    }
+
+    input, textarea, button {
+      font-size: 16px;
+      margin: 8px 0;
+      padding: 12px;
+      width: 100%;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      box-sizing: border-box;
+      transition: border 0.3s;
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--primary);
+      outline: none;
+    }
+
+    button {
+      background: var(--primary);
+      color: white;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background: #375ac1;
+    }
+
+    .search input {
+      width: 48%;
+      display: inline-block;
+      margin-right: 4%;
+    }
+
+    table {
+      width: 90%;
+      border-collapse: collapse;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 15px;
+      border-bottom: 1px solid #eee;
+      text-align: left;
+    }
+
+    thead {
+      background: var(--primary);
+      color: white;
+    }
+
+    tr:hover {
+      background: #f1f1f1;
+    }
+
+    .imminent {
+      background-color: #fff5f5 !important;
+      animation: pulse 1s infinite alternate;
+    }
+
+    .actions button {
+      background: var(--warning);
+      border: none;
+      margin-right: 5px;
+    }
+
+    .actions button:hover {
+      background: #e0aa2f;
+    }
+
+    .actions button:last-child {
+      background: var(--danger);
+    }
+
+    .actions button:last-child:hover {
+      background: #c0392b;
+    }
+
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pulse {
+      from { background-color: #fff5f5; }
+      to { background-color: #ffeaea; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>EasyPlan - Planificateur d'Événements</h1>
+
+  <form id="eventForm">
+    <input type="hidden" id="id">
+    <input type="text" id="titre" placeholder="Titre de l'événement" required>
+    <textarea id="description" placeholder="Description de l'événement" required></textarea>
+    <input type="datetime-local" id="date_event" required>
+    <button type="submit">Enregistrer l'événement</button>
+  </form>
+
+  <div class="search">
+    <input type="text" id="recherche" placeholder="Recherche par mot-clé">
+    <input type="date" id="dateRecherche">
+    <button onclick="rechercher()">Rechercher</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Titre</th>
+        <th>Description</th>
+        <th>Date</th>
+        <th>Statut</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="listeEvenements"></tbody>
+  </table>
+
+  <script>
+    const API = 'api.php';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      chargerEvenements();
+      setInterval(verifierImminents, 15000); // 15 sec
+    });
+
+    document.getElementById('eventForm').addEventListener('submit', e => {
+      e.preventDefault();
+      const id = document.getElementById('id').value;
+      const data = new FormData();
+      data.append('titre', document.getElementById('titre').value);
+      data.append('description', document.getElementById('description').value);
+      data.append('date_event', document.getElementById('date_event').value);
+      if (id) data.append('id', id);
+
+      const action = id ? 'modifier' : 'ajouter';
+
+      fetch(${API}?action=${action}, {
+        method: 'POST',
+        body: data
+      }).then(res => res.json())
+        .then(() => {
+          document.getElementById('eventForm').reset();
+          document.getElementById('id').value = '';
+          chargerEvenements();
+        });
+    });
+
+    function chargerEvenements() {
+      fetch(${API}?action=lister)
+        .then(res => res.json())
+        .then(data => {
+          const tbody = document.getElementById('listeEvenements');
+          tbody.innerHTML = '';
+          data.forEach(ev => {
+            const tr = document.createElement('tr');
+            if (estImminent(ev.date_event)) tr.classList.add('imminent');
+            tr.innerHTML = `
+              <td>${ev.titre}</td>
+              <td>${ev.description}</td>
+              <td>${ev.date_event}</td>
+              <td>${ev.statut}</td>
+              <td class="actions">
+                <button onclick='remplirFormulaire(${JSON.stringify(ev)})'>Modifier</button>
+                <button onclick='supprimer(${ev.id})'>Supprimer</button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        });
+    }
+
+    function remplirFormulaire(ev) {
+      document.getElementById('id').value = ev.id;
+      document.getElementById('titre').value = ev.titre;
+      document.getElementById('description').value = ev.description;
+      document.getElementById('date_event').value = ev.date_event.replace(' ', 'T');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function supprimer(id) {
+      if (!confirm("Confirmer la suppression ?")) return;
+      const data = new FormData();
+      data.append('id', id);
+      fetch(${API}?action=supprimer, {
+        method: 'POST',
+        body: data
+      }).then(() => chargerEvenements());
+    }
+
+    function rechercher() {
+      const mot_cle = document.getElementById('recherche').value;
+      const date = document.getElementById('dateRecherche').value;
+      fetch(${API}?action=rechercher&mot_cle=${mot_cle}&date=${date})
+        .then(res => res.json())
+        .then(data => {
+          const tbody = document.getElementById('listeEvenements');
+          tbody.innerHTML = '';
+          data.forEach(ev => {
+            const tr = document.createElement('tr');
+            if (estImminent(ev.date_event)) tr.classList.add('imminent');
+            tr.innerHTML = `
+              <td>${ev.titre}</td>
+              <td>${ev.description}</td>
+              <td>${ev.date_event}</td>
+              <td>${ev.statut}</td>
+              <td class="actions">
+                <button onclick='remplirFormulaire(${JSON.stringify(ev)})'>Modifier</button>
+                <button onclick='supprimer(${ev.id})'>Supprimer</button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        });
+    }
+
+    function verifierImminents() {
+      fetch(${API}?action=imminents)
+        .then(res => res.json())
+        .then(data => {
+          if (data.length > 0) {
+            alert("Vous avez un ou plusieurs événements dans les 24 heures !");
+          }
+        });
+    }
+
+    function estImminent(date_event) {
+      const now = new Date();
+      const eventDate = new Date(date_event);
+      const diff = eventDate - now;
+      return diff > 0 && diff < 86400000;
+    }
+  </script>
+</body>
+</html>
